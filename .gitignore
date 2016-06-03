@@ -1,0 +1,14 @@
+*.suo
+*.user
+.vs/
+bin/
+obj/
+packages/
+node_modules/
+.grunt/
+_SpecRunner.html
+
+*.mdf
+*.ldf
+custom.appSettings.config
+set_env.bat
