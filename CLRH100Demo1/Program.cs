@@ -19,11 +19,17 @@ static class Program
 
     private static MD5 _MD5;
 
-    ///// <summary>SignalR 接続です。</summary>
-    //private static HubConnection _HubConn;
+    /// <summary>現在の開錠状態です。</summary>
+    private static HostState State { get; set; } = HostState.Waiting;
 
-    ///// <summary>SignalR 接続が絶たれた際の、5秒周期で再接続を試みるタイマーです。</summary>
-    //private static System.Timers.Timer _ReconnectTimer;
+    /// <summary>SignalR 接続です。</summary>
+    private static HubConnection _HubConn;
+
+    /// <summary>SignalR ハブです。</summary>
+    private static IHubProxy _MainHub;
+
+    /// <summary>SignalR 接続が絶たれた際の、5秒周期で再接続を試みるタイマーです。</summary>
+    private static System.Timers.Timer _ReconnectTimer;
 
     private static System.Timers.Timer UnlockTimer { get; set; }
 
@@ -78,6 +84,24 @@ static class Program
         Logger.Trace("Initialize GPIO.");
         Gpio21 = TinyGPIO.Export(port: 21, direction: GPIODirection.Out);
 
+        // SignalR Hub 接続の開設
+        Logger.Trace("Connect to SignalR Server.");
+        _HubConn = new HubConnection(AppSettings.Clrh100demo1.Url, useDefaultUrl: true);
+        try
+        {
+            _HubConn.StateChanged += HubConn_StateChanged;
+            _MainHub = _HubConn.CreateHubProxy("MainHub");
+            _MainHub.On("requestCurrentState", SendCurrentStateToAll);
+            _MainHub.On<bool>("requestRemoteUnlock", isAuthorized => OnRequestRemoteUnlock(isAuthorized));
+            _HubConn.Start().Wait();
+        }
+        catch (Exception err)
+        {
+            Logger.Error(err);
+            if (_HubConn.State == ConnectionState.Disconnected)
+                HubConn_StateChanged(new StateChange(ConnectionState.Connecting, ConnectionState.Disconnected));
+        }
+
         // NFC タグのスキャンを別スレッドで開始
         BeginNFCTagPolling();
 
@@ -86,53 +110,59 @@ static class Program
         _ExitAppEvent.WaitOne();
         Logger.Trace("End wait handle.");
 
+        _HubConn.Dispose();
         if (_TagtoolProc != null && !_TagtoolProc.HasExited) _TagtoolProc.Kill();
-        //// SignalR Hub 接続の開設
-        //var queryString = $"authKey={AppSettings.Agent.AuthKey}";
-        //using (_HubConn = new HubConnection(AppSettings.CarRsrvSite, queryString, useDefaultUrl: true))
-        //{
-        //    _HubConn.StateChanged += HubConn_StateChanged;
-        //    var modelHub = _HubConn.CreateHubProxy("ModelHub");
-        //    modelHub.On<int[]>("changeActiveIO", OnChangeActiveIO);
-        //    _HubConn.Start().Wait();
 
-        //    // NFC タグのスキャンを別スレッドで開始
-        //    BeginNFCTagPolling();
-
-        //    Logger.Trace("Begin wait hanlde...");
-        //    _ExitAppEvent.WaitOne();
-        //    Logger.Trace("End wait handle.");
-
-        //    if (_TagtoolProc != null && !_TagtoolProc.HasExited) _TagtoolProc.Kill();
-        //}
         Logger.Trace("Force exit.");
     }
 
-    ///// <summary>
-    ///// SignalR 接続状態の変更時に呼び出され、切断されたときは5秒周期の再接続処理を実施します。
-    ///// </summary>
-    //private static void HubConn_StateChanged(StateChange args)
-    //{
-    //    Logger.Trace($"[HubConn StateChanged] - {args.NewState}");
-    //    if (args.NewState == ConnectionState.Disconnected)
-    //    {
-    //        _ReconnectTimer = new System.Timers.Timer(5000);
-    //        _ReconnectTimer.Elapsed += (_, __) =>
-    //        {
-    //            Logger.Trace($"[HubConn Reconnect...]");
-    //            _HubConn.Start();
-    //        };
-    //        _ReconnectTimer.Start();
-    //    }
-    //    else
-    //    {
-    //        if (_ReconnectTimer != null)
-    //        {
-    //            _ReconnectTimer.Dispose();
-    //            _ReconnectTimer = null;
-    //        }
-    //    }
-    //}
+    /// <summary>
+    /// SignalR 経由で現在状態を求められたときや、NFCタグ検出時に呼び出され、
+    /// 現在の開錠状態を他の SignalR クライアントに通知します。
+    /// </summary>
+    private static void SendCurrentStateToAll()
+    {
+        Logger.Trace("Sending current state...");
+        try
+        {
+            _MainHub.Invoke("UpdateHostState", State);
+            Logger.Trace("Sent current state.");
+        }
+        catch (Exception e)
+        {
+            Logger.Error(e);
+        }
+    }
+
+    /// <summary>
+    /// SignalR 接続状態の変更時に呼び出され、切断されたときは5秒周期の再接続処理を実施します。
+    /// </summary>
+    private static void HubConn_StateChanged(StateChange args)
+    {
+        Logger.Trace($"[HubConn StateChanged] - {args.NewState}");
+        if (args.NewState == ConnectionState.Connected)
+        {
+            SendCurrentStateToAll();
+        }
+        if (args.NewState == ConnectionState.Disconnected)
+        {
+            _ReconnectTimer = new System.Timers.Timer(5000);
+            _ReconnectTimer.Elapsed += (_, __) =>
+            {
+                Logger.Trace($"[HubConn Reconnect...]");
+                _HubConn.Start();
+            };
+            _ReconnectTimer.Start();
+        }
+        else
+        {
+            if (_ReconnectTimer != null)
+            {
+                _ReconnectTimer.Dispose();
+                _ReconnectTimer = null;
+            }
+        }
+    }
 
     /// <summary>
     /// NFC タグリーダによるスキャン(ポーリング)を、副スレッドで開始します。(開始したら、呼び出し元にすぐに返ります)
@@ -168,29 +198,6 @@ static class Program
         }).Start();
     }
 
-    ///// <summary>
-    ///// I/O番号によるGPIOの活性化指示発生時に呼び出され、指示どおりに GPIO の出力を On/Off します。
-    ///// </summary>
-    //private static void OnChangeActiveIO(int[] activeIoNumbers)
-    //{
-    //    Logger.Trace("[OnChangeActiveIO]");
-    //    foreach (var entry in _IONumberToGPIO.OrderBy(entry => entry.Key))
-    //    {
-    //        var gpio = entry.Value;
-    //        gpio.Value = activeIoNumbers.Contains(entry.Key) ? 1 : 0;
-    //        Logger.Trace($"I/O:{entry.Key}, GPIO:{gpio.Port}, Value:{gpio.Value}");
-    //    }
-
-    //    // エラーチェック - 設定に含まれていない I/O 番号が指定されていないか確認
-    //    var unknownIONumbers = activeIoNumbers
-    //        .Where(ioNum => _IONumberToGPIO.ContainsKey(ioNum) == false)
-    //        .ToArray();
-    //    if (unknownIONumbers.Any())
-    //    {
-    //        Logger.Trace($"[OnChangeActiveIO] - ERROR:Unknown I/O numbers - {string.Join(",", unknownIONumbers)}");
-    //    }
-    //}
-
     private static void TagtoolProc_OutputDataReceived(object sender, DataReceivedEventArgs e)
     {
         try
@@ -203,38 +210,60 @@ static class Program
             Logger.Trace(hashedText);
 
             // 開錠許可されている、登録済の NFC タグかどうか判定
-            var isAuthoried = AppSettings.AuthorizedKeys
+            var isAuthorized = AppSettings.AuthorizedKeys
                 .Split(',')
                 .Any(key => key == hashedText);
-            Logger.Trace($"IsAuthorized: {isAuthoried}");
+            Logger.Trace($"IsAuthorized: {isAuthorized}");
 
             // NFCタグ検出音を再生
-            PlayDetectNFCTagSound(isAuthoried);
+            PlayDetectNFCTagSound(isAuthorized);
 
-            if (isAuthoried)
+            if (isAuthorized)
             {
                 Logger.Trace("UNLOCK");
-
                 Gpio21.Value = 1;
-                UnlockTimer.Stop();
-                UnlockTimer.Start();
+                SetState(HostState.Unlocked);
+            }
+            else
+            {
+                Gpio21.Value = 0;
+                SetState(HostState.Rejected);
             }
 
-            //var address = AppSettings.CarRsrvSite + "api/auth/device-check-in";
-            //Logger.Trace("Uploading [{0}] ...", address);
-            //var webClient = new WebClient();
-            //webClient.Headers.Add("X-AuthKey", AppSettings.Agent.AuthKey);
-            //var result = webClient.UploadValues(
-            //    address,
-            //    method: "POST",
-            //    data: new NameValueCollection { { "deviceIdHash", hashedText } }
-            //);
-            //Logger.Trace("Upload: result is [{0}]", result);
+            UnlockTimer.Stop();
+            UnlockTimer.Start();
         }
         catch (Exception exception)
         {
             Logger.Error(exception);
         }
+    }
+
+    private static void OnRequestRemoteUnlock(bool isAuthorized)
+    {
+        // 効果音を再生
+        PlayDetectNFCTagSound(isAuthorized);
+
+        if (isAuthorized)
+        {
+            Logger.Trace("REMOTE UNLOCK");
+            Gpio21.Value = 1;
+            SetState(HostState.Unlocked);
+        }
+        else
+        {
+            SetState(HostState.Rejected);
+        }
+
+        UnlockTimer.Stop();
+        UnlockTimer.Start();
+    }
+
+
+    private static void SetState(HostState state)
+    {
+        State = state;
+        SendCurrentStateToAll();
     }
 
     /// <summary>
@@ -244,6 +273,7 @@ static class Program
     {
         Gpio21.Value = 0;
         Logger.Trace("End of unlock period.");
+        SetState(HostState.Waiting);
     }
 
     private static Process _PlayerProcess;

@@ -1,0 +1,68 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <title>CLR/H #100 Demo 1</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, minimal-ui" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta charset="utf-8" />
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#008080">
+    <link href="content/site.css" rel="stylesheet" />
+</head>
+<body ng-app="CLRH100Demo1"
+      ng-cloak
+      ng-controller="mainController as ctrl"
+      ng-class='{"connection-losted":!ctrl.connected}'>
+
+    <h1>#clrh100 Demo1</h1>
+
+    <div id="messages-holder">
+        <div id="message-2" class="message">サーバーと接続中...</div>
+    </div>
+
+    <div id="host-state">
+        <div class="waiting text" ng-if="ctrl.state == 0">
+            NFC タグをかざしてください。
+        </div>
+        <div class="unlocked text" ng-if="ctrl.state == 1">
+            開錠しました。
+        </div>
+        <div class="rejected text" ng-if="ctrl.state == 2">
+            開錠できません。
+        </div>
+    </div>
+
+    <div id="remote-unlock-button" ng-click="ctrl.onClickRemoteUnlock()">
+        遠隔開錠
+    </div>
+
+    <div ng-controller="remoteUnlockController as ctrl">
+        <div id="mask" ng-class='{"active":ctrl.isActive}' ng-click="ctrl.onClickCancel()"></div>
+        <div id="key-pad" ng-class='{"active":ctrl.isActive}'>
+            <div id="password-display">{{ctrl.password}}</div>
+            <div id="bs" ng-click="ctrl.onClickBackSpace()">BS</div>
+            <div id="num0" class="num" ng-click="ctrl.onClickNum(0)">0</div>
+            <div id="num1" class="num" ng-click="ctrl.onClickNum(1)">1</div>
+            <div id="num2" class="num" ng-click="ctrl.onClickNum(2)">2</div>
+            <div id="num3" class="num" ng-click="ctrl.onClickNum(3)">3</div>
+            <div id="num4" class="num" ng-click="ctrl.onClickNum(4)">4</div>
+            <div id="num5" class="num" ng-click="ctrl.onClickNum(5)">5</div>
+            <div id="num6" class="num" ng-click="ctrl.onClickNum(6)">6</div>
+            <div id="num7" class="num" ng-click="ctrl.onClickNum(7)">7</div>
+            <div id="num8" class="num" ng-click="ctrl.onClickNum(8)">8</div>
+            <div id="num9" class="num" ng-click="ctrl.onClickNum(9)">9</div>
+            <div id="enter" ng-click="ctrl.onClickEnter()" ng-class='{"enable":ctrl.enterEnabled}'>
+                開錠
+            </div>
+        </div>
+    </div>
+
+    <script src="Scripts/jquery-2.2.3.min.js"></script>
+    <script src="Scripts/jquery.signalR-2.2.0.min.js"></script>
+    <script src="Scripts/angular.min.js"></script>
+    <script src="services/mainHubService.js"></script>
+    <script src="app.js"></script>
+    <script src="controllers/mainController.js"></script>
+    <script src="controllers/remoteUnlockController.js"></script>
+</body>
+</html>

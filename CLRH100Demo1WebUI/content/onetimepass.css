@@ -1,0 +1,31 @@
+﻿#generated-onetimepass {
+    position: absolute;
+    margin: auto;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 300px;
+    height: 100px;
+    line-height: 100px;
+    text-align: center;
+    font-size: 80px;
+}
+
+#timer-bar {
+    background-color: #00c1ff;
+    height: 4px;
+    width: 100%;
+}
+
+    #timer-bar.counting {
+        width: 100%;
+        -moz-transition: width linear 30s;
+        -o-transition: width linear 30s;
+        -webkit-transition: width linear 30s;
+        transition: width linear 30s;
+    }
+
+    #timer-bar.in-counting {
+        width: 0;
+    }
